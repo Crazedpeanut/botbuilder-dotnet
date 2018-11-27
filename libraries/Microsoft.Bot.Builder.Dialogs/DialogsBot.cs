@@ -7,22 +7,13 @@ namespace Microsoft.Bot.Builder.Integration.AspNet.Core
 {
     public class DialogsBot : IBot
     {
-        public static readonly string DefaultRootDialogId = "__DEFAULT_ROOT_DIALOG_ID";
-
         private readonly IDialogFactory _dialogFactory;
         private readonly IStatePropertyAccessor<DialogState> _dialogStateAccessor;
-        private readonly string _rootDialogId;
 
         public DialogsBot(IDialogFactory dialogFactory, IStatePropertyAccessor<DialogState> dialogStateAccessor)
-            : this(dialogFactory, dialogStateAccessor, null)
-        {
-        }
-
-        public DialogsBot(IDialogFactory dialogFactory, IStatePropertyAccessor<DialogState> dialogStateAccessor, string rootDialogId)
         {
             _dialogFactory = dialogFactory ?? throw new ArgumentNullException(nameof(dialogFactory));
             _dialogStateAccessor = dialogStateAccessor ?? throw new ArgumentNullException(nameof(dialogStateAccessor));
-            _rootDialogId = rootDialogId ?? DefaultRootDialogId;
         }
 
         public async Task OnTurnAsync(ITurnContext turnContext, CancellationToken cancellationToken = default(CancellationToken))
@@ -45,7 +36,7 @@ namespace Microsoft.Bot.Builder.Integration.AspNet.Core
                 }
                 else
                 {
-                    dialogTurnResult = await dialogContext.BeginDialogAsync(_rootDialogId, cancellationToken: cancellationToken).ConfigureAwait(false);
+                    dialogTurnResult = await dialogContext.BeginDialogAsync(Dialog.RootDialogId, cancellationToken: cancellationToken).ConfigureAwait(false);
                 }
             }
 

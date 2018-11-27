@@ -12,6 +12,8 @@ namespace Microsoft.Bot.Builder.Dialogs
     /// </summary>
     public abstract class Dialog
     {
+        public static readonly string RootDialogId = "__MS_BOTFRAMEWORK_ROOT_DIALOG_ID";
+
         public static readonly DialogTurnResult EndOfTurn = new DialogTurnResult(DialogTurnStatus.Waiting);
 
         public Dialog()
@@ -29,6 +31,8 @@ namespace Microsoft.Bot.Builder.Dialogs
         }
 
         public string Id { get; set; }
+
+        public string ScopeId { get; set; }
 
         /// <summary>
         /// Gets or sets the telemetry client for logging events.
@@ -78,11 +82,18 @@ namespace Microsoft.Bot.Builder.Dialogs
             return await dc.EndDialogAsync(result, cancellationToken).ConfigureAwait(false);
         }
 
+        [Obsolete("Prefer the overload which takes the DialogContext instance for consistency with other lifecycle event methods. This overload will be removed in a future release.")]
         public virtual Task RepromptDialogAsync(ITurnContext turnContext, DialogInstance instance, CancellationToken cancellationToken = default(CancellationToken))
         {
             // No-op by default
             return Task.CompletedTask;
         }
+
+        public virtual Task RepromptDialogAsync(DialogContext dc, DialogInstance instance, CancellationToken cancellationToken = default(CancellationToken)) =>
+#pragma warning disable CS0618 // Type or member is obsolete
+            // Delegate to the obsolete, legacy overload to maintain consistent behavior for now
+            RepromptDialogAsync(dc.Context, instance, cancellationToken);
+#pragma warning restore CS0618 // Type or member is obsolete
 
         public virtual Task EndDialogAsync(ITurnContext turnContext, DialogInstance instance, DialogReason reason, CancellationToken cancellationToken = default(CancellationToken))
         {

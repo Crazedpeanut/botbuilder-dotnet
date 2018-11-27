@@ -6,21 +6,21 @@ namespace Microsoft.Bot.Builder.Integration.AspNet.Core
     public static class DialogFactoryBuilderExtensions
     {
         public static DialogFactoryBuilder AddRootDialog(this DialogFactoryBuilder builder, Type dialogType, params object[] additionalDialogArguments) =>
-            builder.AddDialog(DialogsBot.DefaultRootDialogId, dialogType, additionalDialogArguments);
+            builder.AddDialog(Dialog.RootDialogId, dialogType, additionalDialogArguments);
 
         public static DialogFactoryBuilder AddRootDialog(this DialogFactoryBuilder builder, Type dialogType) =>
-            builder.AddDialog(DialogsBot.DefaultRootDialogId, dialogType, additionalDialogArguments: null);
+            builder.AddDialog(Dialog.RootDialogId, dialogType, additionalDialogArguments: null);
 
         public static DialogFactoryBuilder AddRootDialog<TDialog>(this DialogFactoryBuilder builder)
             where TDialog : Dialog =>
-            builder.AddDialog(DialogsBot.DefaultRootDialogId, typeof(TDialog), additionalDialogArguments: null);
+            builder.AddDialog(Dialog.RootDialogId, typeof(TDialog), additionalDialogArguments: null);
 
         public static DialogFactoryBuilder AddRootDialog<TDialog>(this DialogFactoryBuilder builder, params object[] additionalDialogArguments)
             where TDialog : Dialog =>
-            builder.AddDialog(DialogsBot.DefaultRootDialogId, typeof(TDialog), additionalDialogArguments);
+            builder.AddDialog(Dialog.RootDialogId, typeof(TDialog), additionalDialogArguments);
 
         public static DialogFactoryBuilder AddRootDialog(this DialogFactoryBuilder builder, Func<IServiceProvider, Dialog> dialogFactory) =>
-            builder.AddDialog(DialogsBot.DefaultRootDialogId, dialogFactory);
+            builder.AddDialog(Dialog.RootDialogId, dialogFactory);
 
         public static DialogFactoryBuilder AddDialog<TDialog>(this DialogFactoryBuilder builder, string dialogId, params object[] additionalDialogArguments)
             where TDialog : Dialog =>

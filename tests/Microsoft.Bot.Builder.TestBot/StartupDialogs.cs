@@ -11,6 +11,7 @@ using Microsoft.Bot.Builder.Integration.AspNet.Core;
 using Microsoft.Bot.Schema;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 
 namespace Microsoft.Bot.Builder.TestBot
@@ -49,13 +50,13 @@ namespace Microsoft.Bot.Builder.TestBot
                      * which, in this case, will be the DialogsBot
                      */
                     .UseBotState(myConversationState)
-                    
+
                     /*
                      * This extension is here for backwards compatibility with the DialogSet API as well which really only supports singleton Dialog 
                      * instances, but it can help people transition if they've already invested in that API and then move to using dialog factory later.
                      */
                     //.UseDialogSet(new MyDialogSet())
-                    
+
                     /*
                      * Configures the IDialogFactory that will be used by the DialogsBot to create instance of the Dialogs 
                      * when they are needed.
@@ -69,9 +70,13 @@ namespace Microsoft.Bot.Builder.TestBot
                          * This style API allows registering a dialog by *Type* so that it can be created only when needed
                          * and injected with any dependencies that it needs automatically for the scope of the turn.
                          */
-                        fb.AddDialog<MyRootDialog>(DialogsBot.DefaultRootDialogId)
+                        fb.AddRootDialog<MyRootDialog>()
                           // This style API allow registering singleton Dialog instances such as the WaterfallDialog. Mainly this
-                          // is for backwards compatibility as, IMNSHO, this is the not the best way to model this API in .NET. 
+                          // is for backwards compatibility as, IMNSHO, this is the not the best way to model this API in .NET.
+                          .AddDialogScope("myDialogScope", sdb =>
+                          {
+                              sdb.AddRootDialog<MyRootDialog>();
+                          })
                           .AddDialog(
                             new WaterfallDialog(
                                 "waterfall",
@@ -84,15 +89,34 @@ namespace Microsoft.Bot.Builder.TestBot
                                         new PromptOptions
                                         {
                                             Prompt = MessageFactory.Text("shall I keep going?"),
-                                        });
+                                        },
+                                        ct);
                                 },
                                 async (sc, ct) =>
                                 {
-                                    if(sc.Result is bool b && b == true)
-                                    await sc.Context.SendActivityAsync("second step").ConfigureAwait(false);
+                                    if (sc.Result is bool b && b == true)
+                                    {
+                                        return await sc.PromptAsync(
+                                            "confirmPrompt",
+                                            new PromptOptions
+                                            {
+                                                Prompt = MessageFactory.Text("ok, want to see a dialog scope in action?")
+                                            },
+                                            ct).ConfigureAwait(false);
+                                    }
+
+                                    return await sc.EndDialogAsync(cancellationToken: ct);
+                                },
+                                async (sc, ct) =>
+                                {
+                                    if (sc.Result is bool b && b == true)
+                                    {
+                                        return await sc.BeginDialogAsync("myDialogScope", cancellationToken: ct);
+                                    }
 
                                     return await sc.EndDialogAsync(cancellationToken: ct);
                                 }))
+                          //.AddDialog<MyComponentDialog>("myComponentDialog")
                           // This is a helper extension method that enables cleaner registering prompts because they can be 
                           // more type constrained and also have a common pattern of taking a validator function as a parameter.
                           .AddPrompt<ConfirmPrompt, bool>("confirmPrompt")
@@ -170,7 +194,7 @@ namespace Microsoft.Bot.Builder.TestBot
             await _makeBelieveService.MakeBelieveAsync();
 
             dc.ActiveDialog.State["currentStatus"] = "pendingConfirmationPrompt";
-            
+
             return await dc.PromptAsync(
                 "confirmPrompt",
                 new PromptOptions
@@ -215,6 +239,23 @@ namespace Microsoft.Bot.Builder.TestBot
     public interface IMakeBelieveService
     {
         Task MakeBelieveAsync();
+    }
+
+    public sealed class MyComponentDialogsDefaultMakeBelieveService : IMakeBelieveService
+    {
+        private readonly ILogger<MyComponentDialogsDefaultMakeBelieveService> _logger;
+
+        public MyComponentDialogsDefaultMakeBelieveService(ILogger<MyComponentDialogsDefaultMakeBelieveService> logger)
+        {
+            _logger = logger;
+        }
+
+        public async Task MakeBelieveAsync()
+        {
+            _logger.LogInformation("I'm not so sure...");
+
+            await Task.Delay(5000);
+        }
     }
 
     public sealed class MyReallyAwesomeMakeBelieveService : IMakeBelieveService

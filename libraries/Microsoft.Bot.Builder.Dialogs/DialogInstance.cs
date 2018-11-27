@@ -18,6 +18,8 @@ namespace Microsoft.Bot.Builder.Dialogs
         /// </value>
         public string Id { get; set; }
 
+        public string ScopeId { get; internal set; }
+
         /// <summary>
         /// Gets or sets the instances persisted state.
         /// </summary>
