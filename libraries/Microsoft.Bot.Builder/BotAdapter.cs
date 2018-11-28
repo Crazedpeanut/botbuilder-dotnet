@@ -5,6 +5,7 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Bot.Schema;
+using Microsoft.Bot.Builder.Diagnostics;
 
 namespace Microsoft.Bot.Builder
 {
@@ -29,12 +30,23 @@ namespace Microsoft.Bot.Builder
     /// <seealso cref="IMiddleware"/>
     public abstract class BotAdapter
     {
+        private System.Diagnostics.DiagnosticSource _diagnosticSource;
+
         /// <summary>
         /// Initializes a new instance of the <see cref="BotAdapter"/> class.
         /// </summary>
         public BotAdapter()
-            : base()
+            : this(null)
         {
+        }
+
+        /// <summary>
+        /// Initializes a new instance of the <see cref="BotAdapter"/> class.
+        /// </summary>
+        /// <param name="diagnosticSource">A <see cref="System.Diagnostics.DiagnosticSource"/> that diagnostic events should be written to.</param>
+        public BotAdapter(System.Diagnostics.DiagnosticSource diagnosticSource)
+        {
+            _diagnosticSource = diagnosticSource ?? new System.Diagnostics.DiagnosticListener("Microsoft.BotBuilder.Core");
         }
 
         /// <summary>
@@ -159,32 +171,45 @@ namespace Microsoft.Bot.Builder
         {
             BotAssert.ContextNotNull(turnContext);
 
-            // Call any registered Middleware Components looking for ReceiveActivityAsync()
-            if (turnContext.Activity != null)
+            _diagnosticSource.StartRunPipelineAsyncActivity(turnContext);
+
+            var exception = default(Exception);
+
+            try
             {
-                try
+                // Call any registered Middleware Components looking for ReceiveActivityAsync()
+                if (turnContext.Activity != null)
                 {
-                    await MiddlewareSet.ReceiveActivityWithStatusAsync(turnContext, callback, cancellationToken).ConfigureAwait(false);
-                }
-                catch (Exception e)
-                {
-                    if (OnTurnError != null)
+                    try
                     {
-                        await OnTurnError.Invoke(turnContext, e).ConfigureAwait(false);
+                        await MiddlewareSet.ReceiveActivityWithStatusAsync(turnContext, callback, cancellationToken).ConfigureAwait(false);
                     }
-                    else
+                    catch (Exception e)
                     {
-                        throw;
+                        exception = e;
+
+                        if (OnTurnError != null)
+                        {
+                            await OnTurnError.Invoke(turnContext, e).ConfigureAwait(false);
+                        }
+                        else
+                        {
+                            throw;
+                        }
+                    }
+                }
+                else
+                {
+                    // call back to caller on proactive case
+                    if (callback != null)
+                    {
+                        await callback(turnContext, cancellationToken).ConfigureAwait(false);
                     }
                 }
             }
-            else
+            finally
             {
-                // call back to caller on proactive case
-                if (callback != null)
-                {
-                    await callback(turnContext, cancellationToken).ConfigureAwait(false);
-                }
+                _diagnosticSource.StopBotAdapterRunPipelineAsyncActivity(turnContext, exception);
             }
         }
     }

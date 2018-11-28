@@ -4,6 +4,8 @@
 using System;
 using System.Linq;
 using System.Threading.Tasks;
+using Microsoft.ApplicationInsights.DiagnosticSourceListener;
+using Microsoft.ApplicationInsights.Extensibility;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Bot.Builder.Dialogs;
@@ -86,7 +88,14 @@ namespace Microsoft.Bot.Builder.TestBot
             //    options.State.Add(new ConversationState(dataStore));
             //    options.Middleware.Add(new AutoSaveStateMiddleware(options.State.ToArray()));
             //    options.Middleware.Add(new ShowTypingMiddleware());
-            //});
+            //});            
+
+            services.AddSingleton<ITelemetryModule, DiagnosticSourceTelemetryModule>();
+
+            services.ConfigureTelemetryModule<DiagnosticSourceTelemetryModule>((tm, o) =>
+            {
+                tm.Sources.Add(new DiagnosticSourceListeningRequest("Microsoft.BotBuilder.Core"));
+            });
         }
 
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
