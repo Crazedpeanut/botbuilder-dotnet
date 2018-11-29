@@ -6,23 +6,29 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Bot.Builder.Dialogs.Diagnostics;
 
 namespace Microsoft.Bot.Builder.Dialogs
 {
     public class DialogContext
     {
+        private readonly System.Diagnostics.DiagnosticSource _diagnosticSource;
+
         /// <summary>
         /// Initializes a new instance of the <see cref="DialogContext"/> class.
         /// </summary>
         /// <param name="dialogs">Parent dialog set.</param>
         /// <param name="turnContext">Context for the current turn of conversation with the user.</param>
         /// <param name="state">Current dialog state.</param>
-        internal DialogContext(DialogSet dialogs, ITurnContext turnContext, DialogState state)
+        /// <param name="diagnosticSource">A <see cref="System.Diagnostics.DiagnosticSource"/> that diagnostic events should be written to. If not supplied, defaults to <see cref="Dialog.DefaultDiagnosticSource">the default instance</see>.</param>
+        internal DialogContext(DialogSet dialogs, ITurnContext turnContext, DialogState state, System.Diagnostics.DiagnosticSource diagnosticSource = null)
         {
             Dialogs = dialogs ?? throw new ArgumentNullException(nameof(dialogs));
             Context = turnContext ?? throw new ArgumentNullException(nameof(turnContext));
 
             Stack = state.DialogStack;
+
+            _diagnosticSource = diagnosticSource ?? Dialog.DefaultDiagnosticSource.Value;
         }
 
         public DialogSet Dialogs { get; private set; }
@@ -41,9 +47,9 @@ namespace Microsoft.Bot.Builder.Dialogs
         {
             get
             {
-                if (Stack.Any())
+                if (Stack.Count > 0)
                 {
-                    return Stack.First();
+                    return Stack[0];
                 }
 
                 return null;
@@ -64,24 +70,38 @@ namespace Microsoft.Bot.Builder.Dialogs
                 throw new ArgumentNullException(nameof(dialogId));
             }
 
-            // Lookup dialog
-            var dialog = Dialogs.Find(dialogId);
-            if (dialog == null)
+            var diagnosticActivity = _diagnosticSource.StartBeginDialogAsyncActivity(this, dialogId);
+            var result = default(DialogTurnResult);
+
+            try
             {
-                throw new Exception($"DialogContext.BeginDialogAsync(): A dialog with an id of '{dialogId}' wasn't found.");
+                // Lookup dialog
+                var dialog = Dialogs.Find(dialogId);
+                if (dialog == null)
+                {
+                    throw new Exception($"DialogContext.BeginDialogAsync(): A dialog with an id of '{dialogId}' wasn't found.");
+                }
+
+                // Push new instance onto stack.
+                var instance = new DialogInstance
+                {
+                    Id = dialogId,
+                    InstanceId = Guid.NewGuid().ToString("N"),
+                    State = new Dictionary<string, object>(),
+                };
+
+                Stack.Insert(0, instance);
+
+                _diagnosticSource.WriteBeginningDialog(this, instance);
+
+                result = await dialog.BeginDialogAsync(this, options, cancellationToken).ConfigureAwait(false);
+            }
+            finally
+            {
+                _diagnosticSource.StopBeginDialogAsyncActivity(diagnosticActivity, this, result);
             }
 
-            // Push new instance onto stack.
-            var instance = new DialogInstance
-            {
-                Id = dialogId,
-                State = new Dictionary<string, object>(),
-            };
-
-            Stack.Insert(0, instance);
-
-            // Call dialogs BeginAsync() method.
-            return await dialog.BeginDialogAsync(this, options, cancellationToken).ConfigureAwait(false);
+            return result;
         }
 
         /// <summary>
@@ -116,15 +136,19 @@ namespace Microsoft.Bot.Builder.Dialogs
         /// <returns>A <see cref="Task"/> representing the asynchronous operation.</returns>
         public async Task<DialogTurnResult> ContinueDialogAsync(CancellationToken cancellationToken = default(CancellationToken))
         {
+            var activeDialogInstance = ActiveDialog;
+
             // Check for a dialog on the stack
-            if (ActiveDialog != null)
+            if (activeDialogInstance != null)
             {
                 // Lookup dialog
-                var dialog = Dialogs.Find(ActiveDialog.Id);
+                var dialog = Dialogs.Find(activeDialogInstance.Id);
                 if (dialog == null)
                 {
-                    throw new Exception($"DialogContext.ContinueDialogAsync(): Can't continue dialog. A dialog with an id of '{ActiveDialog.Id}' wasn't found.");
+                    throw new Exception($"DialogContext.ContinueDialogAsync(): Can't continue dialog. A dialog with an id of '{activeDialogInstance.Id}' wasn't found.");
                 }
+
+                _diagnosticSource.WriteContinuingDialog(this, activeDialogInstance);
 
                 // Continue execution of dialog
                 return await dialog.ContinueDialogAsync(this, cancellationToken).ConfigureAwait(false);
@@ -150,23 +174,31 @@ namespace Microsoft.Bot.Builder.Dialogs
         public async Task<DialogTurnResult> EndDialogAsync(object result = null, CancellationToken cancellationToken = default(CancellationToken))
         {
             // Pop active dialog off the stack
-            if (Stack.Any())
+            if (Stack.Count > 0)
             {
-                var dialogId = Stack[0].Id;
-                var dialog = Dialogs.Find(dialogId);
+                var currentDialogInstance = Stack[0];
+                var dialog = Dialogs.Find(currentDialogInstance.Id);
+
+                _diagnosticSource.WriteEndingDialog(this, currentDialogInstance);
+
                 await dialog.EndDialogAsync(this.Context, Stack[0], DialogReason.EndCalled).ConfigureAwait(false);
+
                 Stack.RemoveAt(0);
             }
 
             // Resume previous dialog
-            if (ActiveDialog != null)
+            if (Stack.Count > 0)
             {
+                var activeDialogInstance = Stack[0];
+
                 // Lookup dialog
-                var dialog = Dialogs.Find(ActiveDialog.Id);
+                var dialog = Dialogs.Find(activeDialogInstance.Id);
                 if (dialog == null)
                 {
-                    throw new Exception($"DialogContext.EndDialogAsync(): Can't resume previous dialog. A dialog with an id of '{ActiveDialog.Id}' wasn't found.");
+                    throw new Exception($"DialogContext.EndDialogAsync(): Can't resume previous dialog. A dialog with an id of '{activeDialogInstance.Id}' wasn't found.");
                 }
+
+                _diagnosticSource.WriteResumingDialog(this, activeDialogInstance);
 
                 // Return result to previous dialog
                 return await dialog.ResumeDialogAsync(this, DialogReason.EndCalled, result, cancellationToken).ConfigureAwait(false);
@@ -184,18 +216,36 @@ namespace Microsoft.Bot.Builder.Dialogs
         /// <returns>The dialog context.</returns>
         public async Task<DialogTurnResult> CancelAllDialogsAsync(CancellationToken cancellationToken = default(CancellationToken))
         {
-            if (Stack.Any())
-            {
-                while (Stack.Any())
-                {
-                    await EndActiveDialogAsync(DialogReason.CancelCalled, cancellationToken).ConfigureAwait(false);
-                }
+            var dialogTurnStatus = DialogTurnStatus.Empty;
 
-                return new DialogTurnResult(DialogTurnStatus.Cancelled);
-            }
-            else
+            if (Stack.Count > 0)
             {
-                return new DialogTurnResult(DialogTurnStatus.Empty);
+                dialogTurnStatus = DialogTurnStatus.Cancelled;
+
+                do
+                {
+                    await EndActiveDialogAsync(Stack[0]).ConfigureAwait(false);
+
+                    // Pop dialog off stack
+                    Stack.RemoveAt(0);
+                }
+                while (Stack.Count > 0);
+            }
+
+            return new DialogTurnResult(dialogTurnStatus);
+
+            async Task EndActiveDialogAsync(DialogInstance instance)
+            {
+                // Lookup dialog
+                var dialog = Dialogs.Find(instance.Id);
+
+                if (dialog != null)
+                {
+                    _diagnosticSource.WriteEndingDialog(this, instance);
+
+                    // Notify dialog of end
+                    await dialog.EndDialogAsync(Context, instance, DialogReason.CancelCalled, cancellationToken).ConfigureAwait(false);
+                }
             }
         }
 
@@ -210,8 +260,10 @@ namespace Microsoft.Bot.Builder.Dialogs
         public async Task<DialogTurnResult> ReplaceDialogAsync(string dialogId, object options = null, CancellationToken cancellationToken = default(CancellationToken))
         {
             // Pop stack
-            if (Stack.Any())
+            if (Stack.Count > 0)
             {
+                _diagnosticSource.WriteReplacingDialog(this, Stack[0]);
+
                 Stack.RemoveAt(0);
             }
 
@@ -226,36 +278,22 @@ namespace Microsoft.Bot.Builder.Dialogs
         /// <returns>A <see cref="Task"/> representing the asynchronous operation.</returns>
         public async Task RepromptDialogAsync(CancellationToken cancellationToken = default(CancellationToken))
         {
+            var activeDialogInstance = ActiveDialog;
+
             // Check for a dialog on the stack
-            if (ActiveDialog != null)
+            if (activeDialogInstance != null)
             {
                 // Lookup dialog
-                var dialog = Dialogs.Find(ActiveDialog.Id);
+                var dialog = Dialogs.Find(activeDialogInstance.Id);
                 if (dialog == null)
                 {
-                    throw new Exception($"DialogSet.RepromptDialogAsync(): Can't find A dialog with an id of '{ActiveDialog.Id}'.");
+                    throw new Exception($"DialogSet.RepromptDialogAsync(): Can't find A dialog with an id of '{activeDialogInstance.Id}'.");
                 }
+
+                _diagnosticSource.WriteRepromptingDialog(this, activeDialogInstance);
 
                 // Ask dialog to re-prompt if supported
-                await dialog.RepromptDialogAsync(Context, ActiveDialog, cancellationToken).ConfigureAwait(false);
-            }
-        }
-
-        private async Task EndActiveDialogAsync(DialogReason reason, CancellationToken cancellationToken = default(CancellationToken))
-        {
-            var instance = ActiveDialog;
-            if (instance != null)
-            {
-                // Lookup dialog
-                var dialog = Dialogs.Find(instance.Id);
-                if (dialog != null)
-                {
-                    // Notify dialog of end
-                    await dialog.EndDialogAsync(Context, instance, reason, cancellationToken).ConfigureAwait(false);
-                }
-
-                // Pop dialog off stack
-                Stack.RemoveAt(0);
+                await dialog.RepromptDialogAsync(Context, activeDialogInstance, cancellationToken).ConfigureAwait(false);
             }
         }
     }

@@ -64,7 +64,7 @@ namespace Microsoft.Bot.Builder.Dialogs
             var state = await _dialogState.GetAsync(turnContext, () => { return new DialogState(); }, cancellationToken).ConfigureAwait(false);
 
             // Create and return context
-            return new DialogContext(this, turnContext, state);
+            return new DialogContext(this, turnContext, state, Dialog.DefaultDiagnosticSource.Value);
         }
 
         /// <summary>
