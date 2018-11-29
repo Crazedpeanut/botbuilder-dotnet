@@ -74,13 +74,13 @@ namespace Microsoft.Bot.Builder.ApplicationInsights.Core.Tests
         }
 
         [TestMethod]
-        public void BotFile_NoAppInsightsInBot()
+        [ExpectedException(typeof(InvalidOperationException))]
+        public void BotFile_NoAppInsights()
         {
-            // Should default to the Null TelemetryClient
             ArrangeBotFile("no_app_insights"); // Invalid bot file
             ArrangeAppSettings(); // Default app settings
             var server = new TestServer(new WebHostBuilder()
-                .UseStartup<StartupVerifyNullTelemetry>());
+                .UseStartup<Startup>());
         }
 
         [TestMethod]
@@ -91,47 +91,6 @@ namespace Microsoft.Bot.Builder.ApplicationInsights.Core.Tests
             var server = new TestServer(new WebHostBuilder()
                 .UseStartup<Startup>());
             Assert.IsTrue(true);
-        }
-
-
-        [TestMethod]
-        public void ServiceResolution_VerifyTelemetryClient()
-        {
-            ArrangeBotFile(); // Default bot file
-            ArrangeAppSettings(); // Default app settings
-            var server = new TestServer(new WebHostBuilder()
-                .UseApplicationInsights()
-                .UseStartup<StartupVerifyTelemetryClient>());
-        }
-
-
-        [TestMethod]
-        public void ServiceResolution_OverrideTelemetry()
-        {
-            ArrangeBotFile(); // Default bot file
-            ArrangeAppSettings(); // Default app settings
-            var server = new TestServer(new WebHostBuilder()
-                .UseStartup<StartupOverideTelemClient>());
-            Assert.IsTrue(true);
-        }
-
-        [TestMethod]
-        public void ServiceResolution_MultipleAppInsights()
-        {
-            ArrangeBotFile("multiple_app_insights"); // Default bot file
-            ArrangeAppSettings(); // Default app settings
-            var server = new TestServer(new WebHostBuilder()
-                .UseStartup<StartupMultipleAppInsights>());
-        }
-
-        [TestMethod]
-        [ExpectedException(typeof(ArgumentException))]
-        public void ServiceResolution_InvalidInstance()
-        {
-            ArrangeBotFile("multiple_app_insights"); // Default bot file
-            ArrangeAppSettings(); // Default app settings
-            var server = new TestServer(new WebHostBuilder()
-                .UseStartup<StartupInvalidInstance>());
         }
 
         /// <summary>
